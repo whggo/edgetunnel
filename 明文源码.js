@@ -6,8 +6,8 @@ const OPT = {
     "siteName" : "CF workers blog",
     "siteDescription":"A Blog Powered By Cloudflare Workers and KV",
     "keyWords":"cloudflare,KV,workers,blog",
-    "cacheZoneId":"cc868e8edce4027ad4a735741111111",
-    "cacheToken":"LNxRWH-MPMIGnp8qhyT8FUsjDRN6tdOnmaaaaaaa",
+    "cacheZoneId":"4f3c9e52f858abbd4a2c2750e2d8ba64",
+    "cacheToken":"KOMegOdq3bFWj76O6NZ_yFaYU9xN540kDeUpZlQ0",
 	
     "pageSize" : 5,
     "recentlySize" : 6,
