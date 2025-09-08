@@ -3,7 +3,7 @@ import { connect } from 'cloudflare:sockets';
 // How to generate your own UUID:
 // [Windows] Press "Win + R", input cmd and run:  Powershell -NoExit -Command "[guid]::NewGuid()"
 let userID = '036b2c62-dd34-4d80-b95e-9055a5d7c466';
-const พร็อกซีไอพีs = ['192.9.139.160', '129.146.46.164'];
+const พร็อกซีไอพีs = ['proxyip.777171.xyz'];
 // if you want to use ipv6 or single พร็อกซีไอพี, please add comment at this line and remove comment at the next line
 let พร็อกซีไอพี = พร็อกซีไอพีs[Math.floor(Math.random() * พร็อกซีไอพีs.length)];
 // use single พร็อกซีไอพี instead of random
@@ -861,4 +861,5 @@ const cn_hostnames = [
   'www.cntv.cn',              // CCTV - China Central Television official website
   'www.secoo.com',            // Secoo - A Chinese luxury e-commerce platform
 ];
+
 
