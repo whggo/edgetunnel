@@ -1,10 +1,10 @@
-name: Obfuscate and Commit
+name: Advanced Obfuscation and Commit
 
 on:
-    #push:
-    #    paths:
-    #        - '明文源码.js'
     workflow_dispatch:
+    # 可选的定时触发，增加随机性
+    schedule:
+        - cron: '0 0 * * *'  # 每天UTC时间0点运行
 
 jobs:
   obfuscate:
@@ -16,40 +16,139 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "16"
+          node-version: "18"
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm install -g javascript-obfuscator
+      - name: Install javascript-obfuscator
+        run: npm install -g javascript-obfuscator@latest
 
-      - name: Obfuscate code
+      - name: Generate unique obfuscation config
         run: |
-          javascript-obfuscator 明文源码.js --output _worker.js \
-          --compact true \
-          --control-flow-flattening true \
-          --control-flow-flattening-threshold 1 \
-          --dead-code-injection true \
-          --dead-code-injection-threshold 1 \
-          --identifier-names-generator hexadecimal \
-          --rename-globals true \
-          --string-array true \
-          --string-array-encoding 'rc4' \
-          --string-array-threshold 1 \
-          --transform-object-keys true \
-          --unicode-escape-sequence true
+          # 生成随机特征参数
+          TIMESTAMP=$(date +%s)
+          RANDOM_SUFFIX=$(head /dev/urandom | tr -dc a-f0-9 | head -c 8)
+          
+          # 创建动态配置文件
+          cat > obfuscate-config.json << EOF
+          {
+            "compact": true,
+            "controlFlowFlattening": true,
+            "controlFlowFlatteningThreshold": 0.$(($TIMESTAMP % 50 + 50)),
+            "deadCodeInjection": true,
+            "deadCodeInjectionThreshold": 0.$(($(($TIMESTAMP % 40)) + 30)),
+            "debugProtection": true,
+            "debugProtectionInterval": $(($TIMESTAMP % 5000 + 1000)),
+            "disableConsoleOutput": true,
+            "identifierNamesGenerator": 'hexadecimal',
+            "identifiersPrefix": 'x${RANDOM_SUFFIX}',
+            "log": false,
+            "renameGlobals": true,
+            "rotateStringArray": true,
+            "selfDefending": true,
+            "shuffleStringArray": true,
+            "splitStrings": true,
+            "splitStringsChunkLength": $(($TIMESTAMP % 10 + 5)),
+            "stringArray": true,
+            "stringArrayEncoding": ['base64','rc4'],
+            "stringArrayIndexShift": true,
+            "stringArrayWrappersCount": $(($TIMESTAMP % 5 + 1)),
+            "stringArrayWrappersChainedCalls": true,
+            "stringArrayWrappersParametersMaxCount": $(($TIMESTAMP % 10 + 5)),
+            "stringArrayThreshold": 0.$(($TIMESTAMP % 60 + 30)),
+            "transformObjectKeys": true,
+            "unicodeEscapeSequence": true,
+            "numbersToExpressions": true,
+            "simplify": true,
+            "stringArrayIndexesType": ['hexadecimal-number']
+          }
+          EOF
 
-      - name: Commit changes
+      - name: Obfuscate with dynamic config
         run: |
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          javascript-obfuscator 明文源码.js \
+            --output _worker.js \
+            --config obfuscate-config.json
+          
+          # 添加随机注释头
+          echo "// Obfuscated at $(date -u +"%Y-%m-%dT%H:%M:%SZ") with key $(head /dev/urandom | tr -dc a-f0-9 | head -c 16)" > temp.js
+          cat _worker.js >> temp.js
+          mv temp.js _worker.js
+
+      - name: Create multiple obfuscated variants
+        run: |
+          # 生成第二个变体，使用不同的配置
+          javascript-obfuscator 明文源码.js \
+            --output _worker_alt.js \
+            --compact true \
+            --control-flow-flattening true \
+            --control-flow-flattening-threshold 0.95 \
+            --dead-code-injection true \
+            --dead-code-injection-threshold 0.4 \
+            --identifier-names-generator 'mangled' \
+            --rename-globals true \
+            --string-array true \
+            --string-array-encoding 'base64' \
+            --string-array-threshold 0.8 \
+            --transform-object-keys true \
+            --unicode-escape-sequence false \
+            --rotate-string-array true \
+            --self-defending true
+
+      - name: Verify obfuscation
+        run: |
+          if [ -s _worker.js ]; then
+            echo "✅ Obfuscation successful"
+            echo "📏 File size: $(wc -c < _worker.js) bytes"
+            echo "📝 Lines of code: $(wc -l < _worker.js)"
+          else
+            echo "❌ Obfuscation failed"
+            exit 1
+          fi
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          git add _worker.js
-          git commit -m "Obfuscate _worker.js" || echo "No changes to commit"
+          
+          # 随机提交信息
+          COMMIT_MESSAGES=(
+            "chore: update obfuscated worker script"
+            "build: optimize worker bundle"
+            "refactor: improve code protection"
+            "security: enhance script obfuscation"
+            "perf: update worker implementation"
+          )
+          RANDOM_MSG=${COMMIT_MESSAGES[$RANDOM % ${#COMMIT_MESSAGES[@]}]}
+          
+          git add _worker.js _worker_alt.js
+          git diff --staged --quiet || git commit -m "${RANDOM_MSG} - $(date +%Y%m%d%H%M%S)"
+          
+          # 随机延迟推送，避免模式化
+          sleep $((RANDOM % 30 + 10))
+          git push origin HEAD:${{ github.ref }}
 
-      - name: Push changes
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: ${{ github.ref }}
+      - name: Cleanup
+        run: |
+          rm -f obfuscate-config.json
+          # 可选：删除临时文件
+          # rm -f _worker_alt.js
+
+      - name: Obfuscation Report
+        run: |
+          echo "### 🔒 Obfuscation Complete" >> $GITHUB_STEP_SUMMARY
+          echo "- **Main File:** \`_worker.js\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Variant File:** \`_worker_alt.js\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Node Version:** 18" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Obfuscation features applied:" >> $GITHUB_STEP_SUMMARY
+          echo "- Control flow flattening" >> $GITHUB_STEP_SUMMARY
+          echo "- Multiple string array encodings" >> $GITHUB_STEP_SUMMARY
+          echo "- Self-defending code" >> $GITHUB_STEP_SUMMARY
+          echo "- Debug protection" >> $GITHUB_STEP_SUMMARY
+          echo "- Dynamic configuration" >> $GITHUB_STEP_SUMMARY
