@@ -16,106 +16,132 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Use Node.js
         uses: actions/setup-node@v3
         with:
           node-version: "18"
-          cache: 'npm'
+          # 移除 cache 配置，避免锁文件错误
 
       - name: Install javascript-obfuscator
-        run: npm install -g javascript-obfuscator@latest
+        run: |
+          # 直接全局安装，不依赖本地包管理
+          npm install -g javascript-obfuscator@latest
+          # 验证安装
+          javascript-obfuscator --version
 
       - name: Generate unique obfuscation config
         run: |
           # 生成随机特征参数
           TIMESTAMP=$(date +%s)
-          RANDOM_SUFFIX=$(head /dev/urandom | tr -dc a-f0-9 | head -c 8)
+          RANDOM_SUFFIX=$(openssl rand -hex 4)
           
           # 创建动态配置文件
           cat > obfuscate-config.json << EOF
           {
             "compact": true,
             "controlFlowFlattening": true,
-            "controlFlowFlatteningThreshold": 0.$(($TIMESTAMP % 50 + 50)),
+            "controlFlowFlatteningThreshold": 0.$(( (TIMESTAMP % 30) + 70 )),
             "deadCodeInjection": true,
-            "deadCodeInjectionThreshold": 0.$(($(($TIMESTAMP % 40)) + 30)),
-            "debugProtection": true,
-            "debugProtectionInterval": $(($TIMESTAMP % 5000 + 1000)),
-            "disableConsoleOutput": true,
-            "identifierNamesGenerator": 'hexadecimal',
-            "identifiersPrefix": 'x${RANDOM_SUFFIX}',
+            "deadCodeInjectionThreshold": 0.$(( (TIMESTAMP % 30) + 40 )),
+            "debugProtection": false,
+            "disableConsoleOutput": false,
+            "identifierNamesGenerator": "hexadecimal",
+            "identifiersPrefix": "x${RANDOM_SUFFIX}",
             "log": false,
             "renameGlobals": true,
             "rotateStringArray": true,
             "selfDefending": true,
             "shuffleStringArray": true,
             "splitStrings": true,
-            "splitStringsChunkLength": $(($TIMESTAMP % 10 + 5)),
+            "splitStringsChunkLength": $(( (TIMESTAMP % 8) + 5 )),
             "stringArray": true,
-            "stringArrayEncoding": ['base64','rc4'],
+            "stringArrayEncoding": ["base64"],
             "stringArrayIndexShift": true,
-            "stringArrayWrappersCount": $(($TIMESTAMP % 5 + 1)),
+            "stringArrayWrappersCount": $(( (TIMESTAMP % 3) + 1 )),
             "stringArrayWrappersChainedCalls": true,
-            "stringArrayWrappersParametersMaxCount": $(($TIMESTAMP % 10 + 5)),
-            "stringArrayThreshold": 0.$(($TIMESTAMP % 60 + 30)),
+            "stringArrayWrappersParametersMaxCount": $(( (TIMESTAMP % 8) + 3 )),
+            "stringArrayThreshold": 0.$(( (TIMESTAMP % 40) + 40 )),
             "transformObjectKeys": true,
             "unicodeEscapeSequence": true,
             "numbersToExpressions": true,
-            "simplify": true,
-            "stringArrayIndexesType": ['hexadecimal-number']
+            "simplify": true
           }
           EOF
+          
+          echo "Generated config with timestamp: $TIMESTAMP"
+          cat obfuscate-config.json
 
       - name: Obfuscate with dynamic config
         run: |
+          # 检查源文件是否存在
+          if [ ! -f "明文源码.js" ]; then
+            echo "❌ 源文件 明文源码.js 不存在"
+            echo "当前目录文件列表:"
+            ls -la
+            exit 1
+          fi
+          
+          echo "📁 开始混淆文件: 明文源码.js"
           javascript-obfuscator 明文源码.js \
             --output _worker.js \
             --config obfuscate-config.json
           
-          # 添加随机注释头
-          echo "// Obfuscated at $(date -u +"%Y-%m-%dT%H:%M:%SZ") with key $(head /dev/urandom | tr -dc a-f0-9 | head -c 16)" > temp.js
+          # 添加时间戳注释
+          echo "// Obfuscated at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > temp.js
           cat _worker.js >> temp.js
           mv temp.js _worker.js
 
-      - name: Create multiple obfuscated variants
+      - name: Create alternative variant
         run: |
           # 生成第二个变体，使用不同的配置
           javascript-obfuscator 明文源码.js \
             --output _worker_alt.js \
             --compact true \
             --control-flow-flattening true \
-            --control-flow-flattening-threshold 0.95 \
+            --control-flow-flattening-threshold 0.85 \
             --dead-code-injection true \
-            --dead-code-injection-threshold 0.4 \
-            --identifier-names-generator 'mangled' \
+            --dead-code-injection-threshold 0.35 \
+            --identifier-names-generator "mangled" \
             --rename-globals true \
             --string-array true \
-            --string-array-encoding 'base64' \
-            --string-array-threshold 0.8 \
+            --string-array-encoding "rc4" \
+            --string-array-threshold 0.75 \
             --transform-object-keys true \
             --unicode-escape-sequence false \
             --rotate-string-array true \
             --self-defending true
 
-      - name: Verify obfuscation
+      - name: Verify obfuscation results
         run: |
-          if [ -s _worker.js ]; then
-            echo "✅ Obfuscation successful"
-            echo "📏 File size: $(wc -c < _worker.js) bytes"
-            echo "📝 Lines of code: $(wc -l < _worker.js)"
+          echo "🔍 验证混淆结果:"
+          if [ -s "_worker.js" ]; then
+            echo "✅ _worker.js - 大小: $(wc -c < _worker.js) bytes, 行数: $(wc -l < _worker.js)"
           else
-            echo "❌ Obfuscation failed"
+            echo "❌ _worker.js 生成失败"
             exit 1
+          fi
+          
+          if [ -s "_worker_alt.js" ]; then
+            echo "✅ _worker_alt.js - 大小: $(wc -c < _worker_alt.js) bytes, 行数: $(wc -l < _worker_alt.js)"
+          else
+            echo "⚠️  _worker_alt.js 生成失败"
           fi
 
       - name: Commit and push changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 随机提交信息
+          # 检查是否有文件需要提交
+          if git diff --quiet --exit-code; then
+            echo "📝 没有检测到文件变化，跳过提交"
+            exit 0
+          fi
+          
+          # 提交信息数组
           COMMIT_MESSAGES=(
             "chore: update obfuscated worker script"
             "build: optimize worker bundle"
@@ -123,32 +149,35 @@ jobs:
             "security: enhance script obfuscation"
             "perf: update worker implementation"
           )
-          RANDOM_MSG=${COMMIT_MESSAGES[$RANDOM % ${#COMMIT_MESSAGES[@]}]}
+          RANDOM_INDEX=$(( RANDOM % ${#COMMIT_MESSAGES[@]} ))
+          SELECTED_MSG="${COMMIT_MESSAGES[$RANDOM_INDEX]}"
           
           git add _worker.js _worker_alt.js
-          git diff --staged --quiet || git commit -m "${RANDOM_MSG} - $(date +%Y%m%d%H%M%S)"
+          git commit -m "${SELECTED_MSG} - $(date +%Y%m%d%H%M%S)"
           
-          # 随机延迟推送，避免模式化
-          sleep $((RANDOM % 30 + 10))
+          echo "🚀 推送更改到仓库..."
           git push origin HEAD:${{ github.ref }}
 
-      - name: Cleanup
+      - name: Cleanup temporary files
         run: |
           rm -f obfuscate-config.json
-          # 可选：删除临时文件
-          # rm -f _worker_alt.js
+          echo "🧹 临时文件清理完成"
 
-      - name: Obfuscation Report
+      - name: Generate summary
+        if: always()
         run: |
-          echo "### 🔒 Obfuscation Complete" >> $GITHUB_STEP_SUMMARY
-          echo "- **Main File:** \`_worker.js\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Variant File:** \`_worker_alt.js\`" >> $GITHUB_STEP_SUMMARY
-          echo "- **Timestamp:** $(date -u)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Node Version:** 18" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔒 混淆完成报告" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Obfuscation features applied:" >> $GITHUB_STEP_SUMMARY
-          echo "- Control flow flattening" >> $GITHUB_STEP_SUMMARY
-          echo "- Multiple string array encodings" >> $GITHUB_STEP_SUMMARY
-          echo "- Self-defending code" >> $GITHUB_STEP_SUMMARY
-          echo "- Debug protection" >> $GITHUB_STEP_SUMMARY
-          echo "- Dynamic configuration" >> $GITHUB_STEP_SUMMARY
+          echo "**执行时间:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**生成文件:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`_worker.js\` - 主混淆文件" >> $GITHUB_STEP_SUMMARY
+          echo "- \`_worker_alt.js\` - 备用变体文件" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**混淆特性:**" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 控制流平坦化" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 字符串数组编码" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 死代码注入" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 全局变量重命名" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 自保护代码" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 动态配置参数" >> $GITHUB_STEP_SUMMARY
