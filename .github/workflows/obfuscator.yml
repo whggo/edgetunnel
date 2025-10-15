@@ -2,9 +2,8 @@ name: Advanced Obfuscation and Commit
 
 on:
     workflow_dispatch:
-    # 可选的定时触发，增加随机性
     schedule:
-        - cron: '0 0 * * *'  # 每天UTC时间0点运行
+        - cron: '0 0 * * *'
 
 jobs:
   obfuscate:
@@ -21,22 +20,17 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: "18"
-          # 移除 cache 配置，避免锁文件错误
 
       - name: Install javascript-obfuscator
         run: |
-          # 直接全局安装，不依赖本地包管理
           npm install -g javascript-obfuscator@latest
-          # 验证安装
           javascript-obfuscator --version
 
       - name: Generate unique obfuscation config
         run: |
-          # 生成随机特征参数
           TIMESTAMP=$(date +%s)
           RANDOM_SUFFIX=$(openssl rand -hex 4)
           
-          # 创建动态配置文件
           cat > obfuscate-config.json << EOF
           {
             "compact": true,
@@ -50,7 +44,6 @@ jobs:
             "identifiersPrefix": "x${RANDOM_SUFFIX}",
             "log": false,
             "renameGlobals": true,
-            "rotateStringArray": true,
             "selfDefending": true,
             "shuffleStringArray": true,
             "splitStrings": true,
@@ -70,14 +63,11 @@ jobs:
           EOF
           
           echo "Generated config with timestamp: $TIMESTAMP"
-          cat obfuscate-config.json
 
       - name: Obfuscate with dynamic config
         run: |
-          # 检查源文件是否存在
           if [ ! -f "明文源码.js" ]; then
             echo "❌ 源文件 明文源码.js 不存在"
-            echo "当前目录文件列表:"
             ls -la
             exit 1
           fi
@@ -87,14 +77,13 @@ jobs:
             --output _worker.js \
             --config obfuscate-config.json
           
-          # 添加时间戳注释
           echo "// Obfuscated at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" > temp.js
           cat _worker.js >> temp.js
           mv temp.js _worker.js
 
       - name: Create alternative variant
         run: |
-          # 生成第二个变体，使用不同的配置
+          # 修复命令行选项，移除不存在的 --rotate-string-array
           javascript-obfuscator 明文源码.js \
             --output _worker_alt.js \
             --compact true \
@@ -109,8 +98,10 @@ jobs:
             --string-array-threshold 0.75 \
             --transform-object-keys true \
             --unicode-escape-sequence false \
-            --rotate-string-array true \
-            --self-defending true
+            --self-defending true \
+            --shuffle-string-array true \
+            --split-strings true \
+            --split-strings-chunk-length 10
 
       - name: Verify obfuscation results
         run: |
@@ -135,28 +126,28 @@ jobs:
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 检查是否有文件需要提交
-          if git diff --quiet --exit-code; then
+          # 检查是否有文件变化
+          if git status --porcelain | grep -q .; then
+            echo "📝 检测到文件变化，准备提交"
+            
+            COMMIT_MESSAGES=(
+              "chore: update obfuscated worker script"
+              "build: optimize worker bundle"
+              "refactor: improve code protection"
+              "security: enhance script obfuscation"
+              "perf: update worker implementation"
+            )
+            RANDOM_INDEX=$(( RANDOM % ${#COMMIT_MESSAGES[@]} ))
+            SELECTED_MSG="${COMMIT_MESSAGES[$RANDOM_INDEX]}"
+            
+            git add _worker.js _worker_alt.js
+            git commit -m "${SELECTED_MSG} - $(date +%Y%m%d%H%M%S)"
+            
+            echo "🚀 推送更改到仓库..."
+            git push origin HEAD:${{ github.ref }}
+          else
             echo "📝 没有检测到文件变化，跳过提交"
-            exit 0
           fi
-          
-          # 提交信息数组
-          COMMIT_MESSAGES=(
-            "chore: update obfuscated worker script"
-            "build: optimize worker bundle"
-            "refactor: improve code protection"
-            "security: enhance script obfuscation"
-            "perf: update worker implementation"
-          )
-          RANDOM_INDEX=$(( RANDOM % ${#COMMIT_MESSAGES[@]} ))
-          SELECTED_MSG="${COMMIT_MESSAGES[$RANDOM_INDEX]}"
-          
-          git add _worker.js _worker_alt.js
-          git commit -m "${SELECTED_MSG} - $(date +%Y%m%d%H%M%S)"
-          
-          echo "🚀 推送更改到仓库..."
-          git push origin HEAD:${{ github.ref }}
 
       - name: Cleanup temporary files
         run: |
@@ -180,4 +171,6 @@ jobs:
           echo "✅ 死代码注入" >> $GITHUB_STEP_SUMMARY
           echo "✅ 全局变量重命名" >> $GITHUB_STEP_SUMMARY
           echo "✅ 自保护代码" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 字符串分割" >> $GITHUB_STEP_SUMMARY
+          echo "✅ 字符串数组洗牌" >> $GITHUB_STEP_SUMMARY
           echo "✅ 动态配置参数" >> $GITHUB_STEP_SUMMARY
